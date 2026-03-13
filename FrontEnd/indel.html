@@ -9,7 +9,7 @@
 <body>
   <main class="container">
     <h1>语音识别 Demo</h1>
-    <p class="desc">支持文件上传识别与麦克风近实时识别（WebSocket）。</p>
+    <p class="desc">支持文件上传识别与麦克风近实时字幕（WebSocket）。</p>
 
     <section class="card">
       <h2>1) 文件上传识别（POST /asr）</h2>
@@ -28,10 +28,12 @@
         <button id="stopBtn" disabled>结束并获取最终结果</button>
       </div>
       <p id="status">状态：未连接</p>
-      <label for="partialResult">中间结果</label>
-      <textarea id="partialResult" rows="4" readonly></textarea>
-      <label for="finalResult">最终结果</label>
-      <textarea id="finalResult" rows="4" readonly></textarea>
+           <label for="partialResult">中间识别文本</label>
+      <textarea id="partialResult" rows="3" readonly></textarea>
+      <label for="subtitlePreview">实时字幕（带时间戳）</label>
+      <textarea id="subtitlePreview" rows="6" readonly></textarea>
+      <label for="finalResult">最终识别文本</label>
+      <textarea id="finalResult" rows="3" readonly></textarea>
     </section>
   </main>
 

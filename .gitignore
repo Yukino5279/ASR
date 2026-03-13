@@ -1,6 +1,27 @@
+# Python
 __pycache__/
 *.pyc
+
+# 上传文件
 uploads/
+**/uploads/
+
+# Python env
 .env
 .venv
-.ipynb_checkpoints
+venv/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# AI模型
+*.pt
+*.bin

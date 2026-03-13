@@ -10,6 +10,7 @@ const stopBtn = document.getElementById("stopBtn");
 const statusEl = document.getElementById("status");
 const partialResult = document.getElementById("partialResult");
 const finalResult = document.getElementById("finalResult");
+const subtitlePreview = document.getElementById("subtitlePreview");
 
 let ws = null;
 let mediaStream = null;
@@ -20,6 +21,11 @@ let processorNode = null;
 function setStatus(text) {
   statusEl.textContent = `状态：${text}`;
 }
+
+function renderSubtitles(subtitles = []) {
+  subtitlePreview.value = subtitles.map((line) => `[${line.start_label} - ${line.end_label}] ${line.text}`).join("\n");
+}
+
 
 uploadBtn.addEventListener("click", async () => {
   const file = fileInput.files[0];
@@ -55,14 +61,27 @@ startBtn.addEventListener("click", async () => {
     ws.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data);
-        if (msg.type === "partial") partialResult.value = msg.text || "";
-        if (msg.type === "final") finalResult.value = msg.text || "";
+        if (msg.type === "partial") {
+          partialResult.value = msg.text || "";
+          renderSubtitles(msg.subtitles || []);
+        }
+        if (msg.type === "final") {
+          finalResult.value = msg.text || "";
+          renderSubtitles(msg.subtitles || []);
+        }
       } catch {
         // ignore non-json message
       }
     };
 
-    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    mediaStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        channelCount: 1,
+        noiseSuppression: true,
+        echoCancellation: true,
+        autoGainControl: true,
+      },
+    });
     audioContext = new (window.AudioContext || window.webkitAudioContext)();
     sourceNode = audioContext.createMediaStreamSource(mediaStream);
 
@@ -83,6 +102,7 @@ startBtn.addEventListener("click", async () => {
     stopBtn.disabled = false;
     partialResult.value = "";
     finalResult.value = "";
+    subtitlePreview.value = "";
   } catch (err) {
     setStatus(`启动失败: ${err.message}`);
     cleanupAudio();
