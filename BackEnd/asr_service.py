@@ -5,15 +5,15 @@ Created on Tue Mar 10 15:36:32 2026
 @author: 86177
 """
 
-import os
-import wave
-import tempfile 
+
 from typing import Any
 import numpy as np
 import whisper
 from config import MODEL_SIZE
 
 model = whisper.load_model(MODEL_SIZE)
+
+MIN_RMS_FOR_SPEECH = 0.006  # 经验阈值：过滤静音和背景噪声，抑制幻觉文本
 
 def _format_timestamp(seconds: float) -> str:
     """将秒数格式化为字幕友好的 mm:ss.mmm 字符串。"""
@@ -45,24 +45,41 @@ def _build_subtitle_segments(result: dict[str, Any]) -> list[dict[str, Any]]:
         )
     return subtitles
 
+def _audio_rms(pcm_data: np.ndarray) -> float:
+    if pcm_data.size == 0:
+        return 0.0
+    return float(np.sqrt(np.mean(np.square(pcm_data), dtype=np.float32)))
+
 
 def transcribe_audio(file_path: str) -> str:
-    result = model.transcribe(file_path, language="zh", task="transcribe", fp16=False)
-    """
-        向后兼容：仍然返回纯文本识别结果。
-    """
+    result = model.transcribe(file_path, task="transcribe", fp16=False)
     return result.get("text", "").strip()
 
-def transcribe_pcm16_subtitles(audio_bytes: bytes, sample_rate: int = 16000) -> dict[str, Any]:
+def transcribe_pcm16_bytes(audio_bytes: bytes, sample_rate: int = 16000) -> str:
+    """
+    向后兼容：仍然返回纯文本识别结果。
+    """
+    return transcribe_pcm16_subtitles(audio_bytes, sample_rate=sample_rate)["text"]
+
+
+
+def transcribe_pcm16_subtitles(
+    audio_bytes: bytes,
+    sample_rate: int = 16000,
+    initial_prompt: str | None = None,
+) -> dict[str, Any]:
     """
     将 PCM16LE 单声道字节流转换为实时字幕段。
-    优先走内存 numpy，避免频繁写临时文件，提升吞吐。
+    使用静音过滤+上下文提示降低重复幻觉概率。
     """
     if not audio_bytes:
         return {"text": "", "subtitles": []}
 
     pcm_data = np.frombuffer(audio_bytes, dtype=np.int16).astype(np.float32) / 32768.0
     if pcm_data.size == 0:
+        return {"text": "", "subtitles": []}
+
+    if _audio_rms(pcm_data) < MIN_RMS_FOR_SPEECH:
         return {"text": "", "subtitles": []}
 
     result = model.transcribe(
@@ -72,6 +89,10 @@ def transcribe_pcm16_subtitles(audio_bytes: bytes, sample_rate: int = 16000) -> 
         fp16=False,
         temperature=0,
         condition_on_previous_text=False,
+        initial_prompt=initial_prompt,
+        no_speech_threshold=0.6,
+        logprob_threshold=-1.0,
+        compression_ratio_threshold=2.4,
     )
 
     subtitles = _build_subtitle_segments(result)

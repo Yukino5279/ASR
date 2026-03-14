@@ -1,4 +1,10 @@
-const apiBase = "http://127.0.0.1:8000";
+const apiBase = (() => {
+  const { protocol, hostname } = window.location;
+  if (hostname) {
+    return `${protocol}//${hostname}:8000`;
+  }
+  return "http://127.0.0.1:8000";
+})();
 
 const fileInput = document.getElementById("fileInput");
 const uploadBtn = document.getElementById("uploadBtn");
@@ -11,6 +17,7 @@ const statusEl = document.getElementById("status");
 const partialResult = document.getElementById("partialResult");
 const finalResult = document.getElementById("finalResult");
 const subtitlePreview = document.getElementById("subtitlePreview");
+
 
 let ws = null;
 let mediaStream = null;
@@ -40,10 +47,21 @@ uploadBtn.addEventListener("click", async () => {
   uploadResult.textContent = "识别中...";
   try {
     const resp = await fetch(`${apiBase}/asr`, { method: "POST", body: formData });
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    if (!resp.ok) {
+      const errorBody = await resp.text();
+      throw new Error(`HTTP ${resp.status}: ${errorBody || "请求失败"}`);
+    }
 
     const data = await resp.json();
-    uploadResult.textContent = JSON.stringify(data, null, 2);
+    const text = (data?.text || "").trim();
+    
+    if (text) {
+      uploadResult.textContent = `文件：${data.filename || file.name}\n识别结果：\n${text}`;
+    } else {
+      uploadResult.textContent = `文件：${data.filename || file.name}\n接口已返回成功，但 text 为空。\n完整响应：\n${JSON.stringify(data, null, 2)}`;
+    }
+
+    
   } catch (err) {
     uploadResult.textContent = `上传识别失败: ${err.message}`;
   }
