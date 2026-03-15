@@ -51,9 +51,35 @@ def _audio_rms(pcm_data: np.ndarray) -> float:
     return float(np.sqrt(np.mean(np.square(pcm_data), dtype=np.float32)))
 
 
+def _extract_text(result: dict[str, Any]) -> str:
+    text = str(result.get("text", "")).strip()
+    if text:
+        return text
+    segment_texts = [str(seg.get("text", "")).strip() for seg in result.get("segments", [])]
+    merged = " ".join([t for t in segment_texts if t]).strip()
+    return merged
+
+
 def transcribe_audio(file_path: str) -> str:
-    result = model.transcribe(file_path, task="transcribe", fp16=False)
-    return result.get("text", "").strip()
+    """
+    文件转写：优先自动语言检测，若结果为空则回退到中文提示再试一次。
+    避免 /asr 因语言参数或边界片段导致空文本。
+    """
+    base_kwargs = {
+        "task": "transcribe",
+        "fp16": False,
+        "temperature": 0,
+        "condition_on_previous_text": False,
+    }
+
+    result_auto = model.transcribe(file_path, **base_kwargs)
+    text_auto = _extract_text(result_auto)
+    if text_auto:
+        return text_auto
+
+    result_zh = model.transcribe(file_path, **base_kwargs)
+    return _extract_text(result_zh)
+
 
 def transcribe_pcm16_bytes(audio_bytes: bytes, sample_rate: int = 16000) -> str:
     """
@@ -66,7 +92,7 @@ def transcribe_pcm16_bytes(audio_bytes: bytes, sample_rate: int = 16000) -> str:
 def transcribe_pcm16_subtitles(
     audio_bytes: bytes,
     sample_rate: int = 16000,
-    initial_prompt: str | None = None,
+    initial_prompt: str | None = None,  #提示词可以为：字符串或空
 ) -> dict[str, Any]:
     """
     将 PCM16LE 单声道字节流转换为实时字幕段。
@@ -84,11 +110,11 @@ def transcribe_pcm16_subtitles(
 
     result = model.transcribe(
         pcm_data,
-        language="zh",
-        task="transcribe",
+        # language="zh",
+        task="transcribe",          #(translate)翻译成英文或者(transcribe)原本语言
         fp16=False,
         temperature=0,
-        condition_on_previous_text=False,
+        condition_on_previous_text=False,   #当前识别不依赖之前的文本
         initial_prompt=initial_prompt,
         no_speech_threshold=0.6,
         logprob_threshold=-1.0,

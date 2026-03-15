@@ -45,3 +45,6 @@ input[type="file"] { flex: 1; }
   white-space: pre-wrap;
 }
 .desc { color: #656d76; }
+
+.upload-progress-wrap { margin-bottom: 12px; }
+.upload-progress-wrap progress { width: 100%; height: 12px; }

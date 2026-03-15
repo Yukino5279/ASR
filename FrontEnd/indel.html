@@ -9,7 +9,7 @@
 <body>
   <main class="container">
     <h1>语音识别 Demo</h1>
-    <p class="desc">支持文件上传识别与麦克风近实时字幕（WebSocket）。</p>
+    <p class="desc">支持文件上传识别与麦克风实时字幕（WebSocket）。</p>
 
     <section class="card">
       <h2>1) 文件上传识别（POST /asr）</h2>
@@ -17,18 +17,25 @@
         <input type="file" id="fileInput" accept="audio/*" />
         <button id="uploadBtn">上传并识别</button>
       </div>
+      <div class="upload-progress-wrap">
+        <label for="uploadProgress">上传/识别进度</label>
+        <progress id="uploadProgress" max="100" value="0"></progress>
+        <p id="uploadStatus" class="desc">状态：等待上传</p>
+      </div>
+      <label for="uploadTextResult">上传识别文本结果</label>
+      <textarea id="uploadTextResult" rows="4" readonly placeholder="识别结果会显示在这里"></textarea>
       <pre id="uploadResult" class="result">等待上传...</pre>
     </section>
 
     <section class="card">
-      <h2>2) 实时识别（WebSocket /asr/stream）</h2>
+      <h2>2) 实时字幕（WebSocket /asr/stream）</h2>
       <div class="row gap">
         <button id="startBtn">开始录音</button>
         <button id="flushBtn" disabled>刷新中间结果</button>
         <button id="stopBtn" disabled>结束并获取最终结果</button>
       </div>
       <p id="status">状态：未连接</p>
-           <label for="partialResult">中间识别文本</label>
+      <label for="partialResult">中间识别文本</label>
       <textarea id="partialResult" rows="3" readonly></textarea>
       <label for="subtitlePreview">实时字幕（带时间戳）</label>
       <textarea id="subtitlePreview" rows="6" readonly></textarea>

@@ -9,6 +9,9 @@ const apiBase = (() => {
 const fileInput = document.getElementById("fileInput");
 const uploadBtn = document.getElementById("uploadBtn");
 const uploadResult = document.getElementById("uploadResult");
+const uploadProgress = document.getElementById("uploadProgress");
+const uploadStatus = document.getElementById("uploadStatus");
+const uploadTextResult = document.getElementById("uploadTextResult");
 
 const startBtn = document.getElementById("startBtn");
 const flushBtn = document.getElementById("flushBtn");
@@ -29,6 +32,50 @@ function setStatus(text) {
   statusEl.textContent = `状态：${text}`;
 }
 
+function setUploadProgress(percent, text) {
+  uploadProgress.value = Math.max(0, Math.min(100, percent));
+  uploadStatus.textContent = `状态：${text}`;
+}
+
+function startRecognitionProgressAnimation() {
+  let current = 91;
+  const timer = window.setInterval(() => {
+    current += 1;
+    if (current > 99) current = 91;
+    setUploadProgress(current, `识别中 ${current}%`);
+  }, 350);
+  return () => window.clearInterval(timer);
+}
+
+function uploadAudioWithProgress(formData) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `${apiBase}/asr`);
+
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) {
+        const percent = Math.round((event.loaded / event.total) * 90);
+        setUploadProgress(percent, `上传中 ${Math.round((event.loaded / event.total) * 100)}%`);
+      }
+    };
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          resolve(JSON.parse(xhr.responseText || "{}"));
+        } catch {
+          reject(new Error("接口返回的 JSON 无法解析"));
+        }
+      } else {
+        reject(new Error(`HTTP ${xhr.status}: ${xhr.responseText || "请求失败"}`));
+      }
+    };
+
+    xhr.onerror = () => reject(new Error("网络错误，上传失败"));
+    xhr.send(formData);
+  });
+}
+
 function renderSubtitles(subtitles = []) {
   subtitlePreview.value = subtitles.map((line) => `[${line.start_label} - ${line.end_label}] ${line.text}`).join("\n");
 }
@@ -45,24 +92,33 @@ uploadBtn.addEventListener("click", async () => {
   formData.append("file", file);
 
   uploadResult.textContent = "识别中...";
+  uploadTextResult.value = "";
+  setUploadProgress(0, "开始上传");
+  let stopAnimation = null;
   try {
-    const resp = await fetch(`${apiBase}/asr`, { method: "POST", body: formData });
-    if (!resp.ok) {
-      const errorBody = await resp.text();
-      throw new Error(`HTTP ${resp.status}: ${errorBody || "请求失败"}`);
-    }
+    const requestPromise = uploadAudioWithProgress(formData);
+    // 给浏览器一次渲染机会，避免上传末尾和识别动画状态切换过快看不到
+    await new Promise((r) => window.setTimeout(r, 50));
+    setUploadProgress(90, "上传完成，准备识别...");
+    stopAnimation = startRecognitionProgressAnimation();
 
-    const data = await resp.json();
+    const data = await requestPromise;
     const text = (data?.text || "").trim();
-    
-    if (text) {
-      uploadResult.textContent = `文件：${data.filename || file.name}\n识别结果：\n${text}`;
-    } else {
-      uploadResult.textContent = `文件：${data.filename || file.name}\n接口已返回成功，但 text 为空。\n完整响应：\n${JSON.stringify(data, null, 2)}`;
-    }
 
-    
+    if (stopAnimation) stopAnimation();
+    setUploadProgress(100, "识别完成");
+
+    if (text) {
+      uploadTextResult.value = text;
+      uploadResult.textContent = `文件：${data.filename || file.name}\n识别结果已显示在上方文本框。`;
+    } else {
+      uploadTextResult.value = "";
+      uploadResult.textContent = `文件：${data.filename || file.name}\n接口已返回成功，但未检测到可展示文本字段。\n完整响应：\n${JSON.stringify(data, null, 2)}`;
+    }
   } catch (err) {
+    if (stopAnimation) stopAnimation();
+    setUploadProgress(0, "失败");
+    uploadTextResult.value = "";
     uploadResult.textContent = `上传识别失败: ${err.message}`;
   }
 });
