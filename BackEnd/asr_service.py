@@ -13,7 +13,12 @@ from config import MODEL_SIZE
 
 model = whisper.load_model(MODEL_SIZE)
 
-MIN_RMS_FOR_SPEECH = 0.006  # 经验阈值：过滤静音和背景噪声，抑制幻觉文本
+MIN_RMS_FOR_SPEECH = 0.0001  # 经验阈值：过滤静音和背景噪声，抑制幻觉文本
+HALLUCINATION_TEXTS = {
+    "thank you",
+    "thanks for watching",
+    "字幕由 amara.org 社群提供",
+}
 
 def _format_timestamp(seconds: float) -> str:
     """将秒数格式化为字幕友好的 mm:ss.mmm 字符串。"""
@@ -59,6 +64,15 @@ def _extract_text(result: dict[str, Any]) -> str:
     merged = " ".join([t for t in segment_texts if t]).strip()
     return merged
 
+def _is_hallucination_text(text: str) -> bool:
+    normalized = " ".join(text.lower().split())
+    if not normalized:
+        return True
+    if normalized in HALLUCINATION_TEXTS:
+        return True
+    if normalized.startswith("thank you") and len(normalized) <= 24:
+        return True
+    return False
 
 def transcribe_audio(file_path: str) -> str:
     """
@@ -74,11 +88,14 @@ def transcribe_audio(file_path: str) -> str:
 
     result_auto = model.transcribe(file_path, **base_kwargs)
     text_auto = _extract_text(result_auto)
-    if text_auto:
+    if text_auto and not _is_hallucination_text(text_auto):
         return text_auto
 
-    result_zh = model.transcribe(file_path, **base_kwargs)
-    return _extract_text(result_zh)
+    result_zh = model.transcribe(file_path, language="zh", **base_kwargs)
+    text_zh = _extract_text(result_zh)
+    if _is_hallucination_text(text_zh):
+        return ""
+    return text_zh
 
 
 def transcribe_pcm16_bytes(audio_bytes: bytes, sample_rate: int = 16000) -> str:
@@ -92,7 +109,8 @@ def transcribe_pcm16_bytes(audio_bytes: bytes, sample_rate: int = 16000) -> str:
 def transcribe_pcm16_subtitles(
     audio_bytes: bytes,
     sample_rate: int = 16000,
-    initial_prompt: str | None = None,  #提示词可以为：字符串或空
+    # initial_prompt: str | None = None,  #提示词可以为：字符串或空
+    initial_prompt = "这是一段中文和日语的对话。こんにちは、よろしくお願いします。",
 ) -> dict[str, Any]:
     """
     将 PCM16LE 单声道字节流转换为实时字幕段。
@@ -116,11 +134,14 @@ def transcribe_pcm16_subtitles(
         temperature=0,
         condition_on_previous_text=False,   #当前识别不依赖之前的文本
         initial_prompt=initial_prompt,
-        no_speech_threshold=0.6,
-        logprob_threshold=-1.0,
+        no_speech_threshold=0.6,        #如果模型认为是非语音概率是0.6就跳过
+        logprob_threshold=-1.0,         #识别准确率低就抛弃识别结果
         compression_ratio_threshold=2.4,
     )
 
-    subtitles = _build_subtitle_segments(result)
-    text = result.get("text", "").strip()
+    subtitles = [
+        line for line in _build_subtitle_segments(result)
+        if not _is_hallucination_text(str(line.get("text", "")).strip())
+    ]
+    text = " ".join([line["text"] for line in subtitles]).strip()
     return {"text": text, "subtitles": subtitles}

@@ -80,6 +80,19 @@ function renderSubtitles(subtitles = []) {
   subtitlePreview.value = subtitles.map((line) => `[${line.start_label} - ${line.end_label}] ${line.text}`).join("\n");
 }
 
+function getDisplayText(payload = {}) {
+  const directText = (payload?.text || "").trim();
+  if (directText) return directText;
+  const altText = (payload?.transcript || payload?.result || "").trim();
+  if (altText) return altText;
+  const subtitles = Array.isArray(payload?.subtitles) ? payload.subtitles : [];
+  return subtitles
+    .map((line) => (line?.text || "").trim())
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+}
+
 
 uploadBtn.addEventListener("click", async () => {
   const file = fileInput.files[0];
@@ -103,7 +116,7 @@ uploadBtn.addEventListener("click", async () => {
     stopAnimation = startRecognitionProgressAnimation();
 
     const data = await requestPromise;
-    const text = (data?.text || "").trim();
+    const text = getDisplayText(data);
 
     if (stopAnimation) stopAnimation();
     setUploadProgress(100, "识别完成");
@@ -130,18 +143,29 @@ startBtn.addEventListener("click", async () => {
 
     ws.onopen = () => setStatus("WebSocket 已连接，正在采集音频...");
     ws.onerror = () => setStatus("WebSocket 出错");
-    ws.onclose = () => setStatus("WebSocket 已关闭");
+    ws.onclose = () => {
+      if (!finalResult.value.trim() && partialResult.value.trim()) {
+        finalResult.value = partialResult.value;
+      }
+      setStatus("WebSocket 已关闭");
+    };
 
     ws.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data);
         if (msg.type === "partial") {
-          partialResult.value = msg.text || "";
+          partialResult.value = getDisplayText(msg);
           renderSubtitles(msg.subtitles || []);
         }
         if (msg.type === "final") {
-          finalResult.value = msg.text || "";
+          finalResult.value = getDisplayText(msg);
+          if (!partialResult.value.trim()) {
+            partialResult.value = finalResult.value;
+          }
           renderSubtitles(msg.subtitles || []);
+        }
+        if (msg.type === "error") {
+          setStatus(`服务端错误: ${msg.message || "未知错误"}`);
         }
       } catch {
         // ignore non-json message
@@ -165,8 +189,21 @@ startBtn.addEventListener("click", async () => {
     processorNode.connect(audioContext.destination);
 
     processorNode.onaudioprocess = (event) => {
+    const inputData = event.inputBuffer.getChannelData(0);
+  
+      // --- 计算音量 (RMS) ---
+      let sum = 0;
+      for (let i = 0; i < inputData.length; i++) {
+        sum += inputData[i] * inputData[i];
+      }
+      let rms = Math.sqrt(sum / inputData.length);
+  
+      // 如果 RMS > 0.01 说明有声音；如果始终是 0，说明麦克风没进数
+      if (rms > 0.01) {
+          console.log("麦克风活动中, 电平值:", rms.toFixed(4));
+      }  
+
       if (!ws || ws.readyState !== WebSocket.OPEN) return;
-      const inputData = event.inputBuffer.getChannelData(0);
       const pcm16 = floatTo16BitPCM(downsampleBuffer(inputData, audioContext.sampleRate, 16000));
       ws.send(pcm16);
     };

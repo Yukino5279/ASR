@@ -5,6 +5,6 @@ Created on Mon Mar  9 15:47:52 2026
 @author: 86177
 """
 UPLOAD_FOLDER = "uploads"
-MODEL_SIZE = "base"     #基础模型
+MODEL_SIZE = "small"     #基础模型
     
     

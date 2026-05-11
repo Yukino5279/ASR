@@ -18,6 +18,7 @@ app.add_middleware(
     allow_origins=[
     "http://127.0.0.1:5500",
     "http://localhost:5500"
+    "http://127.0.0.1:5500/FrontEnd/indel.html"
     ]  ,# 允许前端访问
     allow_credentials=True,
     allow_methods=["*"],  # 允许所有请求方法
@@ -65,13 +66,14 @@ async def stream_speech_to_subtitle(websocket: WebSocket):
     processed_bytes = 0                         #记录已识别过的音频，防止重复识别
     last_emitted_end = 0.0
 
-
-    def build_prompt() -> str:
+    #提取最近生成的3条字幕
+    def build_prompt() -> str:      
         if not committed_subtitles:
             return ""
         return "".join([item["text"] for item in committed_subtitles[-3:]])
 
-    def is_duplicate_subtitle(text: str, abs_start: float, abs_end: float) -> bool:
+    #复读机过滤器
+    def is_duplicate_subtitle(text: str, abs_start: float, abs_end: float) -> bool: 
         if abs_end <= last_emitted_end + 0.05:
             return True
         if not committed_subtitles:
@@ -81,15 +83,19 @@ async def stream_speech_to_subtitle(websocket: WebSocket):
         same_text = text == str(prev["text"]).strip()
         return close_time and same_text
     
+    #核心函数
     def transcribe_incremental(force: bool = False) -> dict | None:
         nonlocal processed_bytes, last_emitted_end
 
+        #检查数据
         unread_bytes = len(audio_buffer) - processed_bytes
+        # 打印一下，看看后端到底攒了多少货
+        print(f"当前缓冲区总长: {len(audio_buffer)}, 待处理: {unread_bytes}")
         if unread_bytes <= 0:
             return None
         if not force and unread_bytes < min_bytes_for_partial:
             return None
-
+        print("--- 开始调用 ASR 模型 ---")
         chunk_start = max(0, processed_bytes - overlap_bytes)
         chunk_bytes = bytes(audio_buffer[chunk_start:])
         result = transcribe_pcm16_subtitles(
@@ -120,12 +126,13 @@ async def stream_speech_to_subtitle(websocket: WebSocket):
 
         processed_bytes = len(audio_buffer)
         merged_text = "".join([s["text"] for s in committed_subtitles]).strip()
+        print(f"模型识别结果: {result}") # 看看这里是不是 []
         return {
             "text": merged_text,
             "subtitles": committed_subtitles,
             "latest_subtitle": committed_subtitles[-1] if committed_subtitles else None,
         }
-
+        
 
     def snapshot_payload() -> dict:
         merged_text = "".join([s["text"] for s in committed_subtitles]).strip()
@@ -136,13 +143,14 @@ async def stream_speech_to_subtitle(websocket: WebSocket):
         }
 
 
+    #将前端传来的音频发到对应函数处理
     try:
         while True:
             message = await websocket.receive()
 
             if "bytes" in message and message["bytes"] is not None:
                 audio_buffer.extend(message["bytes"])
-
+                print(f"收到包，前10字节内容: {list(message['bytes'][:10])}")
                 partial = transcribe_incremental(force=False)
                 if partial is not None:
                     await websocket.send_json({"type": "partial", **partial})
